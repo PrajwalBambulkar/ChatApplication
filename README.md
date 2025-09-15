@@ -220,7 +220,8 @@ This project is evolving, and here are a few exciting things on the horizon:
 
 
 
-# Deployment steps for Kubernetes are documented in the k8s/README.md file.
+### Deployment steps for Kubernetes are documented in the k8s/README.md file.
+https://github.com/PrajwalBambulkar/ChatApplication/blob/e24a19532016ad4393da2a4001a069a077514a00/k8s/README.md
 
 
 
