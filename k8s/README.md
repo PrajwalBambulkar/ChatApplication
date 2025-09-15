@@ -97,10 +97,10 @@ docker --version
 With the prerequisites set up, let’s grab the code for the chat application. Run the following commands:
 
 ```bash
-git clone https://github.com/iemafzalhassan/full-stack_chatApp.git
+https://github.com/PrajwalBambulkar/ChatApplication.git
 ```
 ```bash
-cd full-stack_chatApp/k8s
+cd ChatApplication/k8s
 ```
 
 ```bash
