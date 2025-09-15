@@ -213,9 +213,10 @@ kubectl logs -f -l app=backend -n chat-app
 kubectl logs -f -l app=mongodb -n chat-app
 ```
 ## Accessing the Application
+- kubectl port-forward svc/frontend 30080:80 --address=0.0.0.0 -n chat-app
 
 The application is exposed through NodePort services:
-http://localhost:8080
+http://EC2-IP:30080
 
 You can verify the service URLs using:
 ```bash
