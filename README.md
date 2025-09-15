@@ -213,13 +213,12 @@ This project is evolving, and here are a few exciting things on the horizon:
 
 ## 📚 Project Snapshots:
 
-![Settings](frontend/public/settings.png)
+<img width="1890" height="1051" alt="image" src="https://github.com/user-attachments/assets/da27c690-6599-4bac-a3ed-626ef4b4fa14" />
+<img width="1893" height="1041" alt="image" src="https://github.com/user-attachments/assets/43a00e72-4865-478a-985f-e952bbdebbf0" />
+<img width="1881" height="1054" alt="image" src="https://github.com/user-attachments/assets/45784373-f0bb-449b-b7fa-587b4f6498e8" />
 
-![chat](frontend/public/chat.png)
 
-![logout](/frontend/public/logout.png)
 
-![Login](/frontend/public/login.png)
 
 
 
