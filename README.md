@@ -1,4 +1,4 @@
-[![Fork Button](https://img.shields.io/github/forks/iemafzalhassan/full-stack_chatApp?style=social)](https://github.com/iemafzalhassan/full-stack_chatApp/fork)
+
 
 
 # Real-Time Chat Application
@@ -79,7 +79,7 @@ NODE_ENV=production
 ### Clone the Repository
 
 ```bash
-git clone https://github.com/iemafzalhassan/full-stack_chatApp.git
+https://github.com/PrajwalBambulkar/ChatApplication.git
 ```
 
 🏗️ Build and Run the Application
@@ -89,7 +89,7 @@ Follow these steps to build and run the application:
 1. Build & Run the Containers:
 
 ```bash
-cd full-stack_chatApp
+cd ChatApplication
 ```
 ```bash
 docker-compose up -d --build
@@ -107,11 +107,11 @@ http://localhost
 Follow these simple steps to get the project up and running on your local Host using docker.
 
 ```bash
-git clone https://github.com/iemafzalhassan/full-stack_chatApp.git
+https://github.com/PrajwalBambulkar/ChatApplication.git
 ```
 
 ```bash
-cd full-stack_chatApp
+cd ChatApplication
 ```
 ## Create a Docker network:
 
