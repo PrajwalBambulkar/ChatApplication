@@ -14,7 +14,6 @@ spec:
   rules:
     - http:
         paths:
-          # Backend API
           - path: /api
             pathType: Prefix
             backend:
@@ -23,7 +22,14 @@ spec:
                 port:
                   number: 5001
 
-          # Frontend
+          - path: /health
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 5001
+
           - path: /
             pathType: Prefix
             backend:
