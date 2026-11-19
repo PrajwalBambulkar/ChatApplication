@@ -87,4 +87,6 @@ jobs:
     uses: ./.github/workflows/container-security.yml
     with:
       image_tag: ${{ needs.prep.outputs.tag }}
-
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}  

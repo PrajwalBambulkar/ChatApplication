@@ -9,12 +9,18 @@ on:
         required: true
         type: string
 
+    secrets:
+      DOCKERHUB_USERNAME:
+        required: true
+      DOCKERHUB_TOKEN:
+        required: true
+
 permissions:
   contents: read
 
 jobs:
   container-scan-sign:
-    name: Build, Scan and Sign
+    name: Build, Scan, Push and Sign
     runs-on: ubuntu-latest
 
     permissions:
@@ -33,19 +39,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set lowercase image name
+      # Generate lowercase image names for both registries
+      - name: Set Image Names
         id: image
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          COMPONENT: ${{ matrix.component }}
         shell: bash
         run: |
-          REPOSITORY="${GITHUB_REPOSITORY,,}"
-          IMAGE="ghcr.io/${REPOSITORY}-${{ matrix.component }}"
-          echo "name=${IMAGE}" >> "$GITHUB_OUTPUT"
-          echo "Image: ${IMAGE}"
+          GHCR_IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}-${COMPONENT}"
+          DOCKERHUB_IMAGE="docker.io/${DOCKERHUB_USERNAME,,}/chatapplication-${COMPONENT}"
+
+          echo "ghcr=${GHCR_IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "dockerhub=${DOCKERHUB_IMAGE}" >> "$GITHUB_OUTPUT"
+
+          echo "GHCR Image: ${GHCR_IMAGE}"
+          echo "Docker Hub Image: ${DOCKERHUB_IMAGE}"
 
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Only authenticate and publish on trusted branch pushes.
+      # Login to GHCR only for trusted branch pushes
       - name: Login to GHCR
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
@@ -54,42 +68,89 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build Docker Image
+      # Login to Docker Hub only for trusted branch pushes
+      - name: Login to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Build once and push the same image to both registries
+      - name: Build and Push Docker Images
         id: build
         uses: docker/build-push-action@v6
         with:
           context: ./${{ matrix.component }}
           file: ./${{ matrix.component }}/Dockerfile
+
           push: ${{ github.event_name != 'pull_request' }}
           load: ${{ github.event_name == 'pull_request' }}
-          tags: ${{ steps.image.outputs.name }}:${{ inputs.image_tag }}
 
+          tags: |
+            ${{ steps.image.outputs.ghcr }}:${{ inputs.image_tag }}
+            ${{ steps.image.outputs.dockerhub }}:${{ inputs.image_tag }}
+
+      # Scan the local image for PRs, registry digest for trusted pushes
       - name: Trivy Scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ steps.image.outputs.name }}:${{ inputs.image_tag }}
-          format: table
+          image-ref: ${{ github.event_name == 'pull_request' && format('{0}:{1}', steps.image.outputs.ghcr, inputs.image_tag) || format('{0}@{1}', steps.image.outputs.ghcr, steps.build.outputs.digest) }}
+          format: json
+          output: trivy-${{ matrix.component }}-report.json
           exit-code: '0'
           ignore-unfixed: true
           vuln-type: os,library
           severity: LOW,MEDIUM,HIGH,CRITICAL
 
+      # Save downloadable security report
+      - name: Upload Trivy Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-${{ matrix.component }}-report
+          path: trivy-${{ matrix.component }}-report.json
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Install Cosign
         if: github.event_name != 'pull_request'
         uses: sigstore/cosign-installer@v4.0.0
 
-      - name: Sign Docker Image
+      # Sign GHCR image
+      - name: Sign GHCR Image
         if: github.event_name != 'pull_request'
         env:
-          IMAGE: ${{ steps.image.outputs.name }}
+          IMAGE: ${{ steps.image.outputs.ghcr }}
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           cosign sign --yes "${IMAGE}@${DIGEST}"
 
-      - name: Verify Docker Image Signature
+      # Sign Docker Hub image
+      - name: Sign Docker Hub Image
         if: github.event_name != 'pull_request'
         env:
-          IMAGE: ${{ steps.image.outputs.name }}
+          IMAGE: ${{ steps.image.outputs.dockerhub }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          cosign sign --yes "${IMAGE}@${DIGEST}"
+
+      # Verify GHCR signature
+      - name: Verify GHCR Image Signature
+        if: github.event_name != 'pull_request'
+        env:
+          IMAGE: ${{ steps.image.outputs.ghcr }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          cosign verify "${IMAGE}@${DIGEST}" \
+            --certificate-identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/container-security.yml@refs/heads/${GITHUB_REF_NAME}" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com"
+
+      # Verify Docker Hub signature
+      - name: Verify Docker Hub Image Signature
+        if: github.event_name != 'pull_request'
+        env:
+          IMAGE: ${{ steps.image.outputs.dockerhub }}
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           cosign verify "${IMAGE}@${DIGEST}" \
