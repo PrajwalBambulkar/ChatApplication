@@ -1,17 +1,21 @@
 
-name: Container Security
+name: Container Security and Signing
 
 on:
   workflow_call:
     inputs:
       image_tag:
-        description: Docker image tag
         required: true
         type: string
 
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
 jobs:
-  container-scan:
-    name: Build and Scan
+  container-scan-sign:
+    name: Build, Scan and Sign
     runs-on: ubuntu-latest
 
     strategy:
@@ -28,22 +32,48 @@ jobs:
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Docker image
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Image
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: ./${{ matrix.component }}
           file: ./${{ matrix.component }}/Dockerfile
-          push: false
-          load: true
-          tags: chatapplication-${{ matrix.component }}:${{ inputs.image_tag }}
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/chatapplication-${{ matrix.component }}:${{ inputs.image_tag }}
 
-      - name: Trivy vulnerability scan
+      - name: Trivy Scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: chatapplication-${{ matrix.component }}:${{ inputs.image_tag }}
+          image-ref: ghcr.io/${{ github.repository_owner }}/chatapplication-${{ matrix.component }}@${{ steps.build.outputs.digest }}
           format: table
           exit-code: '0'
           ignore-unfixed: true
           vuln-type: os,library
           severity: LOW,MEDIUM,HIGH,CRITICAL
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4.0.0
+
+      - name: Sign Docker Image
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/chatapplication-${{ matrix.component }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          cosign sign --yes "${IMAGE}@${DIGEST}"
+
+      - name: Verify Docker Image Signature
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/chatapplication-${{ matrix.component }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          cosign verify "${IMAGE}@${DIGEST}" \
+            --certificate-identity-regexp="^https://github.com/${GITHUB_REPOSITORY}/.github/workflows/ci.yml@refs/heads/(main|github-actions-devsecops)$" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com"
 
