@@ -84,6 +84,11 @@ jobs:
     needs:
       - prep
       - dockerfile-lint
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
     uses: ./.github/workflows/container-security.yml
     with:
       image_tag: ${{ needs.prep.outputs.tag }}
