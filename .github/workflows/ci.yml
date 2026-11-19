@@ -200,4 +200,4 @@ jobs:
           exit-code: '0'
           ignore-unfixed: true
           vuln-type: os,library
-          severity: LOW.MEDIUM,HIGH,CRITICAL
+          severity: LOW,MEDIUM,HIGH,CRITICAL
