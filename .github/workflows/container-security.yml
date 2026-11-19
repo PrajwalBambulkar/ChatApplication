@@ -93,6 +93,6 @@ jobs:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           cosign verify "${IMAGE}@${DIGEST}" \
-            --certificate-identity-regexp="^https://github.com/${GITHUB_REPOSITORY}/.github/workflows/ci.yml@refs/heads/(main|github-actions-devsecops)$" \
+            --certificate-identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/container-security.yml@refs/heads/${GITHUB_REF_NAME}" \
             --certificate-oidc-issuer="https://token.actions.githubusercontent.com"
 
