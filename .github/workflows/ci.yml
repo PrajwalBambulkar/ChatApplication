@@ -3,7 +3,7 @@ name: ChatApplication CI
 
 on:
   push:
-    branches: [main,github-actions-devsecops]
+    branches: [main, github-actions-devsecops]
   pull_request:
     branches: [main]
   workflow_dispatch:
