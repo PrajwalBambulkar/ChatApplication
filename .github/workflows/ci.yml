@@ -1,19 +1,30 @@
 
-name: ChatApplication CI
+name: ChatApplication DevSecOps Pipeline
 
 on:
   push:
-    branches: [main, github-actions-devsecops]
+    branches:
+      - main
+      - github-actions-devsecops
   pull_request:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: chatapplication-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+
+  # -----------------------------------------------
+  # 1. FRONTEND CI
+  # -----------------------------------------------
   frontend-ci:
-    name: Frontend - Install, Lint and Build
+    name: Frontend CI
     runs-on: ubuntu-latest
 
     defaults:
@@ -27,7 +38,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -43,8 +54,12 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+
+  # -----------------------------------------------
+  # 2. BACKEND CI
+  # -----------------------------------------------
   backend-ci:
-    name: Backend - Install and Dependency Audit
+    name: Backend CI
     runs-on: ubuntu-latest
 
     defaults:
@@ -58,7 +73,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: backend/package-lock.json
 
@@ -68,5 +83,121 @@ jobs:
       - name: Dependency audit
         run: npm audit --audit-level=high
 
-      - name: Verify backend entry point
+      - name: Backend syntax validation
         run: node --check src/index.js
+
+
+  # -----------------------------------------------
+  # 3. GITLEAKS - SECRET SCANNING
+  # -----------------------------------------------
+  secret-scan:
+    name: Gitleaks Secret Scanning
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan for exposed secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
+  # -----------------------------------------------
+  # 4. CODEQL - SAST
+  # -----------------------------------------------
+  codeql:
+    name: CodeQL SAST
+    runs-on: ubuntu-latest
+
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+
+
+  # -----------------------------------------------
+  # 5. HADOLINT - DOCKERFILE SCANNING
+  # -----------------------------------------------
+  dockerfile-lint:
+    name: Hadolint Dockerfile Scan
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        dockerfile:
+          - frontend/Dockerfile
+          - backend/Dockerfile
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: ${{ matrix.dockerfile }}
+
+
+  # -----------------------------------------------
+  # 6. DOCKER BUILD + TRIVY IMAGE SCANNING
+  # -----------------------------------------------
+  container-security:
+    name: Container Build and Trivy Scan
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: frontend
+            context: ./frontend
+            dockerfile: ./frontend/Dockerfile
+            image: chatapplication-frontend:ci
+
+          - component: backend
+            context: ./backend
+            dockerfile: ./backend/Dockerfile
+            image: chatapplication-backend:ci
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: false
+          load: true
+          tags: ${{ matrix.image }}
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ matrix.image }}
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
