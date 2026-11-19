@@ -6,13 +6,21 @@ on:
     branches:
       - main
       - github-actions-devsecops
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - '.github/workflows/**'
+
   pull_request:
     branches:
       - main
+
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
+  security-events: write
 
 concurrency:
   group: chatapplication-${{ github.ref }}
@@ -20,184 +28,61 @@ concurrency:
 
 jobs:
 
-  # -----------------------------------------------
-  # 1. FRONTEND CI
-  # -----------------------------------------------
-  frontend-ci:
-    name: Frontend CI
+  # STAGE 0: PREPARATION
+  prep:
+    name: Pipeline Preparation
     runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: frontend
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Dependency audit
-        run: npm audit --audit-level=high
-
-      - name: ESLint
-        run: npm run lint
-
-      - name: Build frontend
-        run: npm run build
+      - name: Generate image tag
+        id: tag
+        run: echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
 
-  # -----------------------------------------------
-  # 2. BACKEND CI
-  # -----------------------------------------------
-  backend-ci:
-    name: Backend CI
-    runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: backend
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Dependency audit
-        run: npm audit --audit-level=high
-
-      - name: Backend syntax validation
-        run: node --check src/index.js
+  # STAGE 1: CODE QUALITY
+  code-quality:
+    name: Code Quality
+    needs: prep
+    uses: ./.github/workflows/code-quality.yml
 
 
-  # -----------------------------------------------
-  # 3. GITLEAKS - SECRET SCANNING
-  # -----------------------------------------------
-  secret-scan:
-    name: Gitleaks Secret Scanning
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Scan for exposed secrets
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  # STAGE 2: SECRET SCANNING
+  secret-scanning:
+    name: Secret Scanning
+    needs: code-quality
+    uses: ./.github/workflows/secret-scanning.yml
 
 
-  # -----------------------------------------------
-  # 4. CODEQL - SAST
-  # -----------------------------------------------
+  # STAGE 3: DEPENDENCY SCANNING
+  dependency-scan:
+    name: Dependency Security
+    needs: secret-scanning
+    uses: ./.github/workflows/dependency-scan.yml
+
+
+  # STAGE 4: SAST
   codeql:
     name: CodeQL SAST
-    runs-on: ubuntu-latest
-
-    permissions:
-      actions: read
-      contents: read
-      security-events: write
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: javascript-typescript
-
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+    needs: dependency-scan
+    uses: ./.github/workflows/codeql-scan.yml
 
 
-  # -----------------------------------------------
-  # 5. HADOLINT - DOCKERFILE SCANNING
-  # -----------------------------------------------
+  # STAGE 5: DOCKERFILE SECURITY
   dockerfile-lint:
-    name: Hadolint Dockerfile Scan
-    runs-on: ubuntu-latest
-
-    strategy:
-      fail-fast: false
-      matrix:
-        dockerfile:
-          - frontend/Dockerfile
-          - backend/Dockerfile
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Run Hadolint
-        uses: hadolint/hadolint-action@v3.1.0
-        with:
-          dockerfile: ${{ matrix.dockerfile }}
+    name: Dockerfile Security
+    needs: codeql
+    uses: ./.github/workflows/dockerfile-lint.yml
 
 
-  # -----------------------------------------------
-  # 6. DOCKER BUILD + TRIVY IMAGE SCANNING
-  # -----------------------------------------------
+  # STAGE 6: CONTAINER SECURITY
   container-security:
-    name: Container Build and Trivy Scan
-    runs-on: ubuntu-latest
+    name: Container Build and Trivy
+    needs:
+      - prep
+      - dockerfile-lint
+    uses: ./.github/workflows/container-security.yml
+    with:
+      image_tag: ${{ needs.prep.outputs.tag }}
 
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - component: frontend
-            context: ./frontend
-            dockerfile: ./frontend/Dockerfile
-            image: chatapplication-frontend:ci
-
-          - component: backend
-            context: ./backend
-            dockerfile: ./backend/Dockerfile
-            image: chatapplication-backend:ci
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Build Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
-          push: false
-          load: true
-          tags: ${{ matrix.image }}
-
-      - name: Scan image with Trivy
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          image-ref: ${{ matrix.image }}
-          format: table
-          exit-code: '0'
-          ignore-unfixed: true
-          vuln-type: os,library
-          severity: LOW,MEDIUM,HIGH,CRITICAL

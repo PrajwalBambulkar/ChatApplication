@@ -1,0 +1,27 @@
+
+name: Dockerfile Security
+
+on:
+  workflow_call:
+
+jobs:
+  dockerfile-lint:
+    name: Hadolint
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        component:
+          - frontend
+          - backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Scan Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: ${{ matrix.component }}/Dockerfile
+

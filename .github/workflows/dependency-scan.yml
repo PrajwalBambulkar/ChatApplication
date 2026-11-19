@@ -1,0 +1,44 @@
+
+name: Dependency Security Scan
+
+on:
+  workflow_call:
+
+jobs:
+  dependency-scan:
+    name: NPM Dependency Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Frontend dependency audit
+        working-directory: frontend
+        continue-on-error: true
+        run: |
+          npm ci
+          npm audit --json > ../frontend-audit.json || true
+
+      - name: Backend dependency audit
+        working-directory: backend
+        continue-on-error: true
+        run: |
+          npm ci
+          npm audit --json > ../backend-audit.json || true
+
+      - name: Upload dependency reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-audit-reports
+          path: |
+            frontend-audit.json
+            backend-audit.json
+          retention-days: 7
+

@@ -1,0 +1,49 @@
+
+name: Container Security
+
+on:
+  workflow_call:
+    inputs:
+      image_tag:
+        description: Docker image tag
+        required: true
+        type: string
+
+jobs:
+  container-scan:
+    name: Build and Scan
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        component:
+          - frontend
+          - backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.component }}
+          file: ./${{ matrix.component }}/Dockerfile
+          push: false
+          load: true
+          tags: chatapplication-${{ matrix.component }}:${{ inputs.image_tag }}
+
+      - name: Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: chatapplication-${{ matrix.component }}:${{ inputs.image_tag }}
+          format: table
+          exit-code: '0'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: LOW,MEDIUM,HIGH,CRITICAL
+
